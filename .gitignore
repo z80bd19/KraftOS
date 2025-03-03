@@ -1,1 +1,5 @@
 DevelopingAnOSfromScratch.pdf
+*.bin
+bin/*
+backup/*
+
