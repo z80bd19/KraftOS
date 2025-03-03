@@ -39,8 +39,17 @@
 
 [bits 16]
 
+; Constants for the Boot Loader
+KRNL_OFFSET         equ 0x1000 ;
+READ_SECTOR_FUNC    equ 0x02   ; Bios Read Sector Function
+SECTOR_COUNT        equ 30     ; No. of sectors to read (increase if needed)
+DISK_CYLINDER       equ 0x00   ; Select Cylinder 0 from harddisk
+DISK_HEAD           equ 0x00   ; Select head 0 from hard disk
+DISK_START_SECTOR   equ 0x02   ; Start Reading from Second sector(Sector just after boot sector)
+
 ; Constants for BIOS interrupts and functions
 VIDEO_INT           equ 0x10
+DISK_INT            equ 0x12
 SET_VIDEO_MODE      equ 0x00    ; Function to set video mode
 SET_CURSOR_FUNC     equ 0x02    ; Function to set cursor position
 WRITE_CHAR_FUNC     equ 0x09    ; Function to write character
@@ -328,7 +337,45 @@ main:
     mov dl, 0
     mov bh, 0                   ; First band member (offset 0)
     call set_cursor_position
-    
+
+    ;Boot Loader
+
+    mov bx , KRNL_OFFSET        ; Memory offset to which kernel will be loaded
+    mov ah , READ_SECTOR_FUNC   
+    mov al , SECTOR_COUNT       ; Number of sectors to read
+    mov ch , DISK_CYLINDER      ; Select Cylinder 0 from harddisk
+    mov dh , DISK_HEAD          ; Select head 0 from hard disk
+    mov cl , DISK_START_SECTOR  ; Start Reading from Second sector(Sector just after boot sector)
+
+    int DISK_INT                ; Bios Interrupt Relating to Disk functions
+
+
+    ;Switch To Protected Mode
+    cli ; Turns Interrupts off
+    lgdt [GDT_DESC] ; Loads Our GDT
+
+    mov eax , cr0
+    or  eax , 0x1
+    mov cr0 , eax ; Switch To Protected Mode
+
+    jmp  CODE_SEG:INIT_PM ; Jumps To Our 32 bit Code
+
+    [bits 32]
+
+    INIT_PM:
+    mov ax , DATA_SEG
+    mov ds , ax
+    mov ss , ax
+    mov es , ax
+    mov fs , ax
+    mov gs , ax
+
+    mov ebp , 0x90000
+    mov esp , ebp ; Updates Stack Segment
+
+
+    call 0x1000
+        
     ; End of program
     jmp $                       ; Infinite loop
 
@@ -344,6 +391,37 @@ graphic2: db 0x10, 0x10, 0x38, 0x38, 0x1C, 0xFF, 0x18, 0x18, 0x18, 0x18, 0x10, 0
 graphic3: db 0x08, 0x08, 0x1C, 0x1C, 0x28, 0xFF, 0x18, 0x18, 0x18, 0x18, 0x08, 0x18
 graphic4: db 0x08, 0x08, 0x1C, 0x1C, 0x18, 0xFF, 0x18, 0x18, 0x18, 0x18, 0x10, 0x08
 graphics_end:
+
+GDT_BEGIN:
+
+GDT_NULL_DESC:  ;The  Mandatory  Null  Descriptor
+	dd 0x0
+	dd 0x0
+
+GDT_CODE_SEG:
+	dw 0xffff		;Limit
+	dw 0x0			;Base
+	db 0x0			;Base
+	db 10011010b	;Flags
+	db 11001111b	;Flags
+	db 0x0			;Base
+
+GDT_DATA_SEG:
+	dw 0xffff		;Limit
+	dw 0x0			;Base
+	db 0x0			;Base
+	db 10010010b	;Flags
+	db 11001111b	;Flags
+	db 0x0			;Base
+
+GDT_END:
+
+GDT_DESC:
+	dw GDT_END - GDT_BEGIN - 1
+	dd GDT_BEGIN
+
+CODE_SEG equ GDT_CODE_SEG - GDT_BEGIN
+DATA_SEG equ GDT_DATA_SEG - GDT_BEGIN
 
 ; MBR boot signature
 times 510-($-$$) db 0
