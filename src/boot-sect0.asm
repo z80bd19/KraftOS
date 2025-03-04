@@ -45,11 +45,12 @@ READ_SECTOR_FUNC    equ 0x02   ; Bios Read Sector Function
 SECTOR_COUNT        equ 30     ; No. of sectors to read (increase if needed)
 DISK_CYLINDER       equ 0x00   ; Select Cylinder 0 from harddisk
 DISK_HEAD           equ 0x00   ; Select head 0 from hard disk
+DRIVE_NUMBER        equ 0x80   ; C drive (BIOS may send us the correct value when booting from USB?)
 DISK_START_SECTOR   equ 0x02   ; Start Reading from Second sector(Sector just after boot sector)
 
 ; Constants for BIOS interrupts and functions
 VIDEO_INT           equ 0x10
-DISK_INT            equ 0x12
+DISK_INT            equ 0x13
 SET_VIDEO_MODE      equ 0x00    ; Function to set video mode
 SET_CURSOR_FUNC     equ 0x02    ; Function to set cursor position
 WRITE_CHAR_FUNC     equ 0x09    ; Function to write character
@@ -305,7 +306,7 @@ print_title:
 ; Main program
 ; ---------------------------------------------------------------------------
 main:
-
+ 
     call set_video_mode
       
     call set_background_color
@@ -342,23 +343,26 @@ main:
 
     mov bx , KRNL_OFFSET        ; Memory offset to which kernel will be loaded
     mov ah , READ_SECTOR_FUNC   
-    mov al , SECTOR_COUNT       ; Number of sectors to read
+    mov al , SECTOR_COUNT       ; Number of sectors to read(If your kernel won't fit into 30 sectors , you may need to provide the correct no. of sectors to read)
     mov ch , DISK_CYLINDER      ; Select Cylinder 0 from harddisk
     mov dh , DISK_HEAD          ; Select head 0 from hard disk
+    mov dl , DRIVE_NUMBER       ; Drive number (0x80 is the C drive - BIOS may have DL set for us at entry when booting from USB? If so, then just push-pop it)
     mov cl , DISK_START_SECTOR  ; Start Reading from Second sector(Sector just after boot sector)
 
     int DISK_INT                ; Bios Interrupt Relating to Disk functions
 
-
     ;Switch To Protected Mode
     cli ; Turns Interrupts off
-    lgdt [GDT_DESC] ; Loads Our GDT
+    lgdt [GDT_DESC] ; Loads Our GDT - but the CPU doesn't access it until the jmp below
 
     mov eax , cr0
     or  eax , 0x1
     mov cr0 , eax ; Switch To Protected Mode
 
-    jmp  CODE_SEG:INIT_PM ; Jumps To Our 32 bit Code
+    ; Now, we jump to our 32 bit code which importantly sets the code segment
+    ; causing the GDT to be accessed for the first time.
+
+    jmp  CODE_SEG:INIT_PM 
 
     [bits 32]
 
@@ -377,6 +381,7 @@ main:
     call 0x1000
         
     ; End of program
+    ; Shouldn't get here...
     jmp $                       ; Infinite loop
 
 ; ---------------------------------------------------------------------------
